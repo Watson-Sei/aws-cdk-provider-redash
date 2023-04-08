@@ -22,14 +22,34 @@ func NewRDS(scope constructs.Construct, vpc awsec2.Vpc) *RDS {
 }
 
 func (r *RDS) Make() {
-	sg := awsec2.NewSecurityGroup(r.scope, jsii.String("redash-db-securityGroup"), &awsec2.SecurityGroupProps{
-		Vpc: r.vpc,
+	subnetSelection := awsec2.SubnetSelection{
+		SubnetType: awsec2.SubnetType_PRIVATE_WITH_EGRESS,
+	}
+
+	dbSubnetGroup := awsrds.NewSubnetGroup(r.scope, jsii.String("dbSubnetGroup"), &awsrds.SubnetGroupProps{
+		SubnetGroupName: jsii.String("redash"),
+		VpcSubnets:      &subnetSelection,
+		Vpc:             r.vpc,
+		Description:     jsii.String("for redash"),
 	})
 
-	sg.AddIngressRule(
-		awsec2.Peer_Ipv4(jsii.String("0.0.0.0/0")),
+	securityGroup := awsec2.NewSecurityGroup(r.scope, jsii.String("redashSecurityGroup"), &awsec2.SecurityGroupProps{
+		Vpc:               r.vpc,
+		SecurityGroupName: jsii.String("rds-postgres-redash"),
+		Description:       jsii.String("for redash"),
+		AllowAllOutbound:  jsii.Bool(false),
+	})
+
+	securityGroup.AddIngressRule(
+		awsec2.Peer_AnyIpv4(),
 		awsec2.Port_Tcp(jsii.Number(5432)),
-		jsii.String("Allow PostgreSQL from anywhere"),
+		jsii.String("Allow Redash devices HTTP access"),
+		jsii.Bool(false),
+	)
+	securityGroup.AddEgressRule(
+		awsec2.Peer_AnyIpv4(),
+		awsec2.Port_AllTcp(),
+		jsii.String("Allow Redash devices HTTP access"),
 		jsii.Bool(false),
 	)
 
@@ -46,17 +66,13 @@ func (r *RDS) Make() {
 		Engine: awsrds.DatabaseInstanceEngine_Postgres(&awsrds.PostgresInstanceEngineProps{
 			Version: awsrds.PostgresEngineVersion_VER_14_1(),
 		}),
-		InstanceType: awsec2.InstanceType_Of(awsec2.InstanceClass_M5, awsec2.InstanceSize_XLARGE),
-		Credentials:  awsrds.Credentials_FromSecret(rdsSecret, nil),
-		DatabaseName: jsii.String("redash_postgresql"),
-		Vpc:          r.vpc,
-		SubnetGroup: awsrds.NewSubnetGroup(r.scope, jsii.String("redash-db-subnetGroup"), &awsrds.SubnetGroupProps{
-			Vpc:             r.vpc,
-			Description:     jsii.String("db subnet group"),
-			SubnetGroupName: jsii.String("redash-db-subnetGroup"),
-		}),
+		InstanceType:            awsec2.InstanceType_Of(awsec2.InstanceClass_M5, awsec2.InstanceSize_XLARGE),
+		Credentials:             awsrds.Credentials_FromSecret(rdsSecret, nil),
+		DatabaseName:            jsii.String("redash_postgresql"),
+		Vpc:                     r.vpc,
+		SubnetGroup:             dbSubnetGroup,
 		PubliclyAccessible:      jsii.Bool(false),
-		SecurityGroups:          &[]awsec2.ISecurityGroup{sg},
+		SecurityGroups:          &[]awsec2.ISecurityGroup{securityGroup},
 		InstanceIdentifier:      jsii.String("redash-db"),
 		StorageType:             awsrds.StorageType_IO1,
 		AllocatedStorage:        jsii.Number(400),

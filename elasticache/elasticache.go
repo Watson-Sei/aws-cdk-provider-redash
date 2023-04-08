@@ -25,12 +25,20 @@ func NewElastiCache(scope constructs.Construct, vpc awsec2.Vpc) *ElastiCache {
 func (e *ElastiCache) Make() {
 	// TODO
 	sg := awsec2.NewSecurityGroup(e.scope, jsii.String("redash-redis-securityGroup"), &awsec2.SecurityGroupProps{
-		Vpc: e.vpc,
+		SecurityGroupName: jsii.String("rds-db-redash-securityGroup"),
+		Vpc:               e.vpc,
+		AllowAllOutbound:  jsii.Bool(false),
 	})
 
 	sg.AddIngressRule(
-		awsec2.Peer_Ipv4(jsii.String("0.0.0.0/0")),
+		awsec2.Peer_AnyIpv4(),
 		awsec2.Port_Tcp(jsii.Number(6379)),
+		jsii.String("Allow Redis from anywhere"),
+		jsii.Bool(false),
+	)
+	sg.AddEgressRule(
+		awsec2.Peer_AnyIpv4(),
+		awsec2.Port_AllTcp(),
 		jsii.String("Allow Redis from anywhere"),
 		jsii.Bool(false),
 	)

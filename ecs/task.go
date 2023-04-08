@@ -3,7 +3,6 @@ package ecs
 import (
 	"os"
 
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsecr"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsecs"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/jsii-runtime-go"
@@ -82,23 +81,23 @@ func (e *ECS) MakeTask() {
 	})
 	taskRole := awsiam.NewRole(e.scope, jsii.String("ecs-task-role"), &awsiam.RoleProps{
 		RoleName:        jsii.String("ecs-task-role"),
-		AssumedBy:       awsiam.NewServicePrincipal(jsii.String("ecs-tasks.amazonaws.com"), nil),
+		AssumedBy:       awsiam.NewServicePrincipal(jsii.String("ecs-tasks.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{policy},
 	})
 
-	repository := awsecr.Repository_FromRepositoryName(e.scope, jsii.String("redash-repository"), jsii.String("ecr-redash"))
+	// repository := awsecr.Repository_FromRepositoryName(e.scope, jsii.String("redash-repository"), jsii.String("ecr-redash"))
 	// rdsSecret := awssecretsmanager.Secret_FromSecretNameV2(e.scope, jsii.String("redash-secret"), jsii.String("RDSSecret"))
 
 	createDbDefinition := awsecs.NewFargateTaskDefinition(e.scope, jsii.String("CreateDBTaskDefinition"), &awsecs.FargateTaskDefinitionProps{
 		ExecutionRole:  executionRole,
 		TaskRole:       taskRole,
-		MemoryLimitMiB: jsii.Number(2048),
 		Cpu:            jsii.Number(1024),
+		MemoryLimitMiB: jsii.Number(2048),
 	})
 	createDbDefinition.AddContainer(jsii.String("CreateDBContainer"), &awsecs.ContainerDefinitionOptions{
-		Image:          awsecs.ContainerImage_FromEcrRepository(repository, jsii.String("latest")),
-		MemoryLimitMiB: jsii.Number(2048),
+		Image:          awsecs.ContainerImage_FromRegistry(jsii.String("redash/redash:10.0.0.b50363"), &awsecs.RepositoryImageProps{}),
 		Cpu:            jsii.Number(1024),
+		MemoryLimitMiB: jsii.Number(2048),
 		Command: &[]*string{
 			jsii.String("create_db"),
 		},
@@ -119,47 +118,16 @@ func (e *ECS) MakeTask() {
 	workerTaskDefinition := awsecs.NewFargateTaskDefinition(e.scope, jsii.String("WorkerTaskDefinition"), &awsecs.FargateTaskDefinitionProps{
 		ExecutionRole:  executionRole,
 		TaskRole:       taskRole,
-		MemoryLimitMiB: jsii.Number(2048),
-		Cpu:            jsii.Number(1024),
+		Cpu:            jsii.Number(2048),
+		MemoryLimitMiB: jsii.Number(4096),
 	})
 	workerTaskDefinition.AddContainer(jsii.String("WorkerContainer"), &awsecs.ContainerDefinitionOptions{
-		Image:          awsecs.ContainerImage_FromEcrRepository(repository, jsii.String("latest")),
-		MemoryLimitMiB: jsii.Number(2048),
-		Cpu:            jsii.Number(1024),
+		ContainerName:  jsii.String("redash-worker"),
+		Image:          awsecs.ContainerImage_FromRegistry(jsii.String("redash/redash:10.0.0.b50363"), &awsecs.RepositoryImageProps{}),
+		Cpu:            jsii.Number(2048),
+		MemoryLimitMiB: jsii.Number(4096),
 		Command: &[]*string{
 			jsii.String("worker"),
-		},
-		Environment: &map[string]*string{
-			"PYTHONUNBUFFERED":              jsii.String(os.Getenv("PYTHONUNBUFFERED")),
-			"REDASH_LOG_LEVEL":              jsii.String(os.Getenv("REDASH_LOG_LEVEL")),
-			"REDASH_REDIS_URL":              jsii.String(os.Getenv("REDASH_REDIS_URL")),
-			"REDASH_DATABASE_URL":           jsii.String(os.Getenv("REDASH_DATABASE_URL")),
-			"REDASH_COOKIE_SECRET":          jsii.String(os.Getenv("REDASH_COOKIE_SECRET")),
-			"REDASH_SECRET_KEY":             jsii.String(os.Getenv("REDASH_SECRET_KEY")),
-			"WORKERS_COUNT":                 jsii.String("4"),
-			"QUEUES":                        jsii.String("queries,scheduled_queries,celery"),
-			"REDASH_PASSWORD_LOGIN_ENABLED": jsii.String("true"),
-			"REDASH_LDAP_LOGIN_ENABLED":     jsii.String("false"),
-		},
-		Logging: awsecs.LogDrivers_AwsLogs(&awsecs.AwsLogDriverProps{
-			StreamPrefix: jsii.String("redash"),
-		}),
-		Essential: jsii.Bool(true),
-	})
-	e.tasks["worker"] = workerTaskDefinition
-
-	schedulerTaskDefinition := awsecs.NewFargateTaskDefinition(e.scope, jsii.String("SchedulerTaskDefinition"), &awsecs.FargateTaskDefinitionProps{
-		ExecutionRole:  executionRole,
-		TaskRole:       taskRole,
-		MemoryLimitMiB: jsii.Number(2048),
-		Cpu:            jsii.Number(1024),
-	})
-	schedulerTaskDefinition.AddContainer(jsii.String("SchedulerContainer"), &awsecs.ContainerDefinitionOptions{
-		Image:          awsecs.ContainerImage_FromEcrRepository(repository, jsii.String("latest")),
-		MemoryLimitMiB: jsii.Number(2048),
-		Cpu:            jsii.Number(1024),
-		Command: &[]*string{
-			jsii.String("scheduler"),
 		},
 		Environment: &map[string]*string{
 			"PYTHONUNBUFFERED":     jsii.String(os.Getenv("PYTHONUNBUFFERED")),
@@ -169,23 +137,24 @@ func (e *ECS) MakeTask() {
 			"REDASH_COOKIE_SECRET": jsii.String(os.Getenv("REDASH_COOKIE_SECRET")),
 			"REDASH_SECRET_KEY":    jsii.String(os.Getenv("REDASH_SECRET_KEY")),
 		},
+		Essential: jsii.Bool(true),
 		Logging: awsecs.LogDrivers_AwsLogs(&awsecs.AwsLogDriverProps{
 			StreamPrefix: jsii.String("redash"),
 		}),
-		Essential: jsii.Bool(true),
 	})
-	e.tasks["scheduler"] = schedulerTaskDefinition
+	e.tasks["worker"] = workerTaskDefinition
 
 	serverTaskDefinition := awsecs.NewFargateTaskDefinition(e.scope, jsii.String("ServerTaskDefinition"), &awsecs.FargateTaskDefinitionProps{
 		ExecutionRole:  executionRole,
 		TaskRole:       taskRole,
-		MemoryLimitMiB: jsii.Number(2048),
 		Cpu:            jsii.Number(1024),
+		MemoryLimitMiB: jsii.Number(2048),
 	})
 	serverTaskDefinition.AddContainer(jsii.String("ServerContainer"), &awsecs.ContainerDefinitionOptions{
-		Image:          awsecs.ContainerImage_FromEcrRepository(repository, jsii.String("redash-nginx")),
-		MemoryLimitMiB: jsii.Number(2048),
+		ContainerName:  jsii.String("redash-server"),
+		Image:          awsecs.ContainerImage_FromRegistry(jsii.String("redash/redash:10.0.0.b50363"), &awsecs.RepositoryImageProps{}),
 		Cpu:            jsii.Number(1024),
+		MemoryLimitMiB: jsii.Number(2048),
 		Command: &[]*string{
 			jsii.String("server"),
 		},
@@ -196,7 +165,6 @@ func (e *ECS) MakeTask() {
 			"REDASH_DATABASE_URL":  jsii.String(os.Getenv("REDASH_DATABASE_URL")),
 			"REDASH_COOKIE_SECRET": jsii.String(os.Getenv("REDASH_COOKIE_SECRET")),
 			"REDASH_SECRET_KEY":    jsii.String(os.Getenv("REDASH_SECRET_KEY")),
-			"REDASH_WEB_WORKER":    jsii.String("4"),
 		},
 		Logging: awsecs.LogDrivers_AwsLogs(&awsecs.AwsLogDriverProps{
 			StreamPrefix: jsii.String("redash"),
@@ -204,8 +172,8 @@ func (e *ECS) MakeTask() {
 		Essential: jsii.Bool(true),
 		PortMappings: &[]*awsecs.PortMapping{
 			{
-				HostPort:      jsii.Number(5000),
 				ContainerPort: jsii.Number(5000),
+				HostPort:      jsii.Number(5000),
 			},
 		},
 	})
